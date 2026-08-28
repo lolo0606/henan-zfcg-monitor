@@ -46,6 +46,18 @@ TARGET_CHANNELS = [
 
 DAYS_BACK = 7
 
+import os
+import smtplib
+# ... 其他导入 ...
+
+# 读取环境变量
+EMAIL_USER = os.getenv('EMAIL_USER')
+EMAIL_PASS = os.getenv('EMAIL_PASS')
+EMAIL_TO = os.getenv('EMAIL_TO')
+SMTP_SERVER = os.getenv('SMTP_SERVER')
+SMTP_PORT = int(os.getenv('SMTP_PORT'))  # 端口号需要转成整数
+SENDER_NAME = os.getenv('SENDER_NAME')
+
 # 邮件配置（通过环境变量注入，本地可直填）
 EMAIL_USER = os.getenv("EMAIL_USER", "你的发件箱@126.com")
 EMAIL_PASS = os.getenv("EMAIL_PASS", "")  # 不要在这里写明文！
