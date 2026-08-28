@@ -2,9 +2,14 @@ name: 河南政府采购网监控
 
 on:
   schedule:
-    # 北京时间每天 08:00 = UTC 每天 00:00
-    - cron: "0 0 * * *"
+    # ⏰ 北京时间 09:00 = UTC 01:00
+    - cron: "0 1 * * *"
+    # ⏰ 北京时间 17:30 = UTC 09:30
+    - cron: "30 9 * * *"
   workflow_dispatch:  # 允许手动触发（Actions 页面点 Run workflow）
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   monitor:
@@ -25,6 +30,13 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: 下载去重数据库（Artifacts）
+        uses: actions/download-artifact@v4
+        with:
+          name: dedup-db
+          path: ./
+        continue-on-error: true   # 第一次没数据库时跳过
+
       - name: 运行监控脚本
         env:
           EMAIL_USER: ${{ secrets.EMAIL_USER }}
@@ -33,4 +45,12 @@ jobs:
           SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
           SENDER_NAME: ${{ secrets.SENDER_NAME }}
+          WECOM_WEBHOOK: ${{ secrets.WECOM_WEBHOOK }}
         run: python henan_monitor.py
+
+      - name: 上传去重数据库（Artifacts）
+        uses: actions/upload-artifact@v4
+        with:
+          name: dedup-db
+          path: henan_zfcg_v2.db
+          retention-days: 30
