@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-河南政府采购网 监控 v2.0
+河南政府采购网 监控 v2.0.0（整理版）
 - requests 抓静态 HTML（div.List2 ul li）
 - 关键词 ∩ 类型 双重过滤
 - HTML 邮件（jinja2 模板，自定义发件人名称）
@@ -8,57 +8,53 @@
 - 设计借鉴 NodeMail（https://github.com/lolo0606/NodeMail）
 
 环境变量（GitHub Actions Secrets）：
-    EMAIL_USER  发件箱地址
-    EMAIL_PASS  SMTP 授权码（非登录密码）
-    EMAIL_TO    收件人，多个用逗号分隔
-    WECOM_WEBHOOK  企业微信群机器人完整 URL
-本地调试时可把下方 CONFIG 里的值直接填好，或通过 os.getenv 注入。
+    EMAIL_USER    发件箱地址
+    EMAIL_PASS    SMTP 授权码（非登录密码）
+    EMAIL_TO      收件人，多个用逗号分隔
+    SMTP_SERVER   smtp.126.com / smtp.qq.com
+    SMTP_PORT     465（SSL）或 587（STARTTLS）
+    SENDER_NAME   自定义发件人显示名
+    WECOM_WEBHOOK 企业微信群机器人完整 URL
 """
 import os
 import re
-import sys
 import hashlib
 import sqlite3
+import smtplib
 import requests
 from datetime import datetime, timedelta
 from email.mime.text import MIMEText
 from email.utils import formataddr
-import smtplib
 
 try:
     from jinja2 import Template
 except ImportError:
-    Template = None  # 降级为纯文本
+    Template = None
 
 from bs4 import BeautifulSoup
 
 # ==================== 配置区 ====================
 VERSION = "2.0.0"
 
-KEYWORDS = ["设备"]  #"造价", "审计", "评审"
+KEYWORDS = ["设备"]   # 调试用；正式可改回 ["造价", "审计", "评审"]
 TYPE_ALLOW = ["招标", "征集", "磋商", "采购", "谈判", "询价", "单一来源", "资格预审"]
 EXCLUDE_WORDS = ["废标", "终止", "合同公告", "验收", "中标公告", "成交公告"]
 
 TARGET_CHANNELS = [
-    {"name": "省级-采购公告", "url": "https://zfcg.henan.gov.cn/henan/list2?channelCode=0101&bz=1&pageNo=1&pageSize=16&gglx=0"},
+    {"name": "省级-采购公告",   "url": "https://zfcg.henan.gov.cn/henan/list2?channelCode=0101&bz=1&pageNo=1&pageSize=16&gglx=0"},
     {"name": "市州县-采购公告", "url": "https://zfcg.henan.gov.cn/henan/list2?channelCode=0101&bz=2&pageNo=1&pageSize=16&gglx=0"},
 ]
 
 DAYS_BACK = 7
 
-# 读取环境变量（仅保留这一份）
-EMAIL_USER = os.getenv('EMAIL_USER')
-EMAIL_PASS = os.getenv('EMAIL_PASS')
-EMAIL_TO = os.getenv('EMAIL_TO')
-SMTP_SERVER = os.getenv('SMTP_SERVER')
-SMTP_PORT = int(os.getenv('SMTP_PORT')) if os.getenv('SMTP_PORT') else 465
-USE_SSL = SMTP_PORT in (465,)
-SENDER_NAME = os.getenv('SENDER_NAME', '📢 河南招标监控')
-WECOM_WEBHOOK = os.getenv('WECOM_WEBHOOK')
-
-# ★ 自定义发件人名称（NodeMail 里 from: '"昵称" <邮箱>' 的 Python 版）★
-SENDER_NAME = os.getenv("SENDER_NAME", "📢 河南招标监控")
-
+# ---- 环境变量读取（仅此一份，无重复）----
+EMAIL_USER    = os.getenv("EMAIL_USER", "")
+EMAIL_PASS    = os.getenv("EMAIL_PASS", "")
+EMAIL_TO      = os.getenv("EMAIL_TO", "")
+SMTP_SERVER   = os.getenv("SMTP_SERVER", "")
+SMTP_PORT     = int(os.getenv("SMTP_PORT", "465")) if os.getenv("SMTP_PORT") else 465
+USE_SSL       = SMTP_PORT in (465,)
+SENDER_NAME   = os.getenv("SENDER_NAME", "📢 河南招标监控")
 WECOM_WEBHOOK = os.getenv("WECOM_WEBHOOK", "")
 
 HEADERS = {
@@ -67,7 +63,7 @@ HEADERS = {
     "Accept-Language": "zh-CN,zh;q=0.9",
     "Referer": "https://zfcg.henan.gov.cn/henan",
 }
-DB_FILE = os.getenv("DB_FILE", "henan_zfcg_v2.db")  # 设为 ":memory:" 可跑无状态验证
+DB_FILE = os.getenv("DB_FILE", "henan_zfcg_v2.db")
 TEMPLATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "email_template.html")
 # ===============================================
 
@@ -117,6 +113,17 @@ def fetch_channel(channel):
     return results
 
 
+def in_time_window(pub, start, today):
+    if not pub:
+        return True
+    try:
+        fmt = "%Y-%m-%d %H:%M" if len(pub) > 10 else "%Y-%m-%d"
+        pd = datetime.strptime(pub, fmt)
+        return start <= pd <= today
+    except ValueError:
+        return True
+
+
 def apply_filter(items, today, start):
     out = []
     for it in items:
@@ -130,21 +137,9 @@ def apply_filter(items, today, start):
     return out
 
 
-def in_time_window(pub, start, today):
-    if not pub:
-        return True
-    try:
-        fmt = "%Y-%m-%d %H:%M" if len(pub) > 10 else "%Y-%m-%d"
-        pd = datetime.strptime(pub, fmt)
-        return start <= pd <= today
-    except ValueError:
-        return True
-
-
 def render_email(items):
     """借鉴 NodeMail：用模板渲染 HTML 邮件"""
     if Template is None:
-        # 降级：纯文本
         lines = "\n".join(f"{i+1}. [{it['pub']}] {it['title']}\n    {it['link']}" for i, it in enumerate(items))
         return f"河南政府采购网 新公告 {len(items)} 条\n\n{lines}", "plain"
 
@@ -162,10 +157,14 @@ def render_email(items):
 
 def send_email(subject, html, mime):
     """自定义发件人名称：formataddr((名称, 邮箱)) —— 对应 NodeMail 的 from: '"昵称"<邮箱>' """
-    if not EMAIL_USER or "你的" in EMAIL_USER:
+    if not EMAIL_USER:
         print("    ⚠️ 未配置 EMAIL_USER，跳过邮件")
         return
     receivers = [x.strip() for x in EMAIL_TO.split(",") if x.strip()]
+    if not receivers:
+        print("    ⚠️ 未配置 EMAIL_TO，跳过邮件")
+        return
+
     msg = MIMEText(html, mime, "utf-8")
     msg["From"] = formataddr((SENDER_NAME, EMAIL_USER))  # ← 关键：自定义发件人显示名
     msg["To"] = ", ".join(receivers)
@@ -188,7 +187,7 @@ def send_email(subject, html, mime):
 
 
 def push_wecom(items):
-    if not WECOM_WEBHOOK or "你的" in WECOM_WEBHOOK:
+    if not WECOM_WEBHOOK:
         return
     lines = "\n".join(
         f"> {i+1}. [{it['pub']}] {it['title']}\n>     [查看]({it['link']})"
@@ -226,10 +225,8 @@ def check_once():
         for it in all_new:
             print(f"     - [{it['pub']}] {it['title'][:55]}")
 
-        # 邮件：HTML 渲染 + 自定义发件人名称
         html, mime = render_email(all_new)
         send_email(f"【河南招标监控】{len(all_new)} 条新公告", html, mime)
-        # 企业微信
         push_wecom(all_new)
     else:
         print("  😴 本次无新增公告")
