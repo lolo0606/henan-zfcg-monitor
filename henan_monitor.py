@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-河南政府采购网 监控 v2.0.0（整理版）
+河南政府采购网 监控 v2.0.0（云端版，含网络重试）
 - requests 抓静态 HTML（div.List2 ul li）
 - 关键词 ∩ 类型 双重过滤
 - HTML 邮件（jinja2 模板，自定义发件人名称）
 - 企业微信群机器人推送
+- ★ 网络抖动自动重试（fetch_channel 单次请求失败时重试 3 次）
 - 设计借鉴 NodeMail（https://github.com/lolo0606/NodeMail）
 
 环境变量（GitHub Actions Secrets）：
@@ -17,7 +18,7 @@
     WECOM_WEBHOOK 企业微信群机器人完整 URL
 """
 import os
-import re
+import time
 import hashlib
 import sqlite3
 import smtplib
@@ -47,7 +48,11 @@ TARGET_CHANNELS = [
 
 DAYS_BACK = 7
 
-# ---- 环境变量读取（仅此一份，无重复）----
+# ---- 网络重试配置 ----
+FETCH_RETRIES = 3      # 单次抓取最大重试次数
+FETCH_DELAY   = 5       # 每次重试间隔（秒）
+
+# ---- 环境变量读取（仅此一份）----
 EMAIL_USER    = os.getenv("EMAIL_USER", "")
 EMAIL_PASS    = os.getenv("EMAIL_PASS", "")
 EMAIL_TO      = os.getenv("EMAIL_TO", "")
@@ -63,7 +68,7 @@ HEADERS = {
     "Accept-Language": "zh-CN,zh;q=0.9",
     "Referer": "https://zfcg.henan.gov.cn/henan",
 }
-DB_FILE = os.getenv("DB_FILE", "henan_zfcg_v2.db")
+DB_FILE = "henan_zfcg_v2.db"   # 固定名，配合 GitHub Artifact 持久化
 TEMPLATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "email_template.html")
 # ===============================================
 
@@ -82,20 +87,11 @@ def mark_sent(h, title, pub):
     conn.commit()
 
 
-def fetch_channel(channel):
-    print(f"  📡 {channel['name']}")
-    try:
-        r = requests.get(channel["url"], headers=HEADERS, timeout=20)
-        r.encoding = "UTF-8"
-    except Exception as e:
-        print(f"    ❌ 请求失败: {e}")
-        return []
-
-    soup = BeautifulSoup(r.text, "html.parser")
+def _parse_items(soup, channel_url):
+    """从 BeautifulSoup 里解析出公告列表（抽出来便于重试逻辑复用）"""
     results = []
     lis = soup.select("div.List2 ul li")
     print(f"    div.List2 ul li 命中: {len(lis)} 个")
-
     for li in lis:
         a = li.select_one("a")
         if not a:
@@ -111,6 +107,28 @@ def fetch_channel(channel):
         h = hashlib.md5((title + href).encode()).hexdigest()
         results.append({"hash": h, "title": title, "link": href, "pub": pub})
     return results
+
+
+def fetch_channel(channel):
+    """★ 带重试的抓取：请求失败自动重试 FETCH_RETRIES 次，间隔 FETCH_DELAY 秒"""
+    print(f"  📡 {channel['name']}")
+    last_err = None
+    for attempt in range(1, FETCH_RETRIES + 1):
+        try:
+            r = requests.get(channel["url"], headers=HEADERS, timeout=20)
+            r.encoding = "UTF-8"
+            if r.status_code != 200:
+                raise Exception(f"HTTP {r.status_code}")
+            soup = BeautifulSoup(r.text, "html.parser")
+            return _parse_items(soup, channel["url"])
+        except Exception as e:
+            last_err = e
+            print(f"    ⚠️ 第 {attempt}/{FETCH_RETRIES} 次请求失败: {e}")
+            if attempt < FETCH_RETRIES:
+                print(f"    🔄 {FETCH_DELAY}s 后重试...")
+                time.sleep(FETCH_DELAY)
+    print(f"    ❌ 抓取失败（已重试 {FETCH_RETRIES} 次）: {last_err}")
+    return []
 
 
 def in_time_window(pub, start, today):
@@ -140,6 +158,7 @@ def apply_filter(items, today, start):
 def render_email(items):
     """借鉴 NodeMail：用模板渲染 HTML 邮件"""
     if Template is None:
+        print("    ⚠️ jinja2 未安装，使用纯文本降级（请检查 requirements.txt 是否含 jinja2）")
         lines = "\n".join(f"{i+1}. [{it['pub']}] {it['title']}\n    {it['link']}" for i, it in enumerate(items))
         return f"河南政府采购网 新公告 {len(items)} 条\n\n{lines}", "plain"
 
@@ -166,7 +185,7 @@ def send_email(subject, html, mime):
         return
 
     msg = MIMEText(html, mime, "utf-8")
-    msg["From"] = formataddr((SENDER_NAME, EMAIL_USER))  # ← 关键：自定义发件人显示名
+    msg["From"] = formataddr((SENDER_NAME, EMAIL_USER))
     msg["To"] = ", ".join(receivers)
     msg["Subject"] = subject
 
@@ -238,6 +257,7 @@ def main():
     print(f"  河南政府采购网 监控 v{VERSION}")
     print(f"  关键词: {KEYWORDS} | 类型: {TYPE_ALLOW}")
     print(f"  时间窗: 近 {DAYS_BACK} 天")
+    print(f"  抓取重试: {FETCH_RETRIES} 次（间隔 {FETCH_DELAY}s）")
     print(f"  发件人: {SENDER_NAME} <{EMAIL_USER}>")
     print("=" * 55)
     check_once()
