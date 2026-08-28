@@ -46,24 +46,15 @@ TARGET_CHANNELS = [
 
 DAYS_BACK = 7
 
-import os
-import smtplib
-# ... 其他导入 ...
-
-# 读取环境变量
+# 读取环境变量（仅保留这一份）
 EMAIL_USER = os.getenv('EMAIL_USER')
 EMAIL_PASS = os.getenv('EMAIL_PASS')
 EMAIL_TO = os.getenv('EMAIL_TO')
 SMTP_SERVER = os.getenv('SMTP_SERVER')
-SMTP_PORT = int(os.getenv('SMTP_PORT'))  # 端口号需要转成整数
-SENDER_NAME = os.getenv('SENDER_NAME')
-
-# 邮件配置（通过环境变量注入，本地可直填）
-EMAIL_USER = os.getenv("EMAIL_USER", "你的发件箱@126.com")
-EMAIL_PASS = os.getenv("EMAIL_PASS", "")  # 不要在这里写明文！
-EMAIL_TO   = os.getenv("EMAIL_TO", "283963187@qq.com")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "465"))
+SMTP_PORT = int(os.getenv('SMTP_PORT')) if os.getenv('SMTP_PORT') else 465
 USE_SSL = SMTP_PORT in (465,)
+SENDER_NAME = os.getenv('SENDER_NAME', '📢 河南招标监控')
+WECOM_WEBHOOK = os.getenv('WECOM_WEBHOOK')
 
 # ★ 自定义发件人名称（NodeMail 里 from: '"昵称" <邮箱>' 的 Python 版）★
 SENDER_NAME = os.getenv("SENDER_NAME", "📢 河南招标监控")
