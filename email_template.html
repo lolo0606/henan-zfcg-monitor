@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>河南政府采购网 新公告</title>
+<style>
+    body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; background: #f4f6f9; margin: 0; padding: 20px; }
+    .container { max-width: 640px; margin: 0 auto; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
+    .header { background: linear-gradient(135deg, #1a73e8, #0d47a1); color: #fff; padding: 24px 28px; }
+    .header h1 { margin: 0; font-size: 20px; }
+    .header .sub { margin-top: 6px; font-size: 13px; opacity: 0.9; }
+    .meta { padding: 14px 28px; background: #eaf1fb; font-size: 13px; color: #1a73e8; border-bottom: 1px solid #dce8f7; }
+    .meta span { margin-right: 16px; }
+    table { width: 100%; border-collapse: collapse; }
+    th { background: #f0f5fc; color: #333; font-size: 13px; padding: 10px 12px; text-align: left; border-bottom: 2px solid #dce8f7; }
+    td { padding: 12px; border-bottom: 1px solid #eee; vertical-align: top; font-size: 14px; }
+    tr:hover { background: #f8fbff; }
+    .idx { color: #1a73e8; font-weight: bold; width: 36px; }
+    .date { color: #888; font-size: 12px; white-space: nowrap; width: 96px; }
+    .title a { color: #1a0dab; text-decoration: none; line-height: 1.5; }
+    .title a:hover { text-decoration: underline; }
+    .footer { padding: 16px 28px; font-size: 12px; color: #999; text-align: center; background: #fafbfc; }
+</style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <h1>📢 河南政府采购网 · 新公告提醒</h1>
+        <div class="sub">关键词：{{ keywords }} ｜ 公告类型：{{ types }}</div>
+    </div>
+    <div class="meta">
+        <span>📅 监控时间：{{ check_time }}</span>
+        <span>📊 本次新增：{{ items|length }} 条</span>
+        <span>⏰ 时间窗：近 {{ days_back }} 天</span>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th class="idx">#</th>
+                <th class="date">发布时间</th>
+                <th>项目名称</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for it in items %}
+            <tr>
+                <td class="idx">{{ loop.index }}</td>
+                <td class="date">{{ it.pub }}</td>
+                <td class="title"><a href="{{ it.link }}">{{ it.title }}</a></td>
+            </tr>
+        {% else %}
+            <tr><td colspan="3" style="text-align:center; color:#999; padding:30px;">本次无新增公告 🎉</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    <div class="footer">
+        本邮件由监控系统自动发送 · 数据来源：河南省政府采购网<br>
+        如需调整关键词或停止推送，请联系管理员
+    </div>
+</div>
+</body>
+</html>
