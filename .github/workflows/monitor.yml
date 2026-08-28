@@ -25,14 +25,12 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
 
-- name: 运行监控脚本
-      env:
-        EMAIL_USER: ${{ secrets.EMAIL_USER }}
-        EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
-        EMAIL_TO: ${{ secrets.EMAIL_TO }}
-        SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
-        SMTP_PORT: ${{ secrets.SMTP_PORT }}
-        SENDER_NAME: ${{ secrets.SENDER_NAME }}
-        # 如果你的脚本里需要 webhook，且 Secrets 里配的是 WEBHOOK，则保留下面这行
-        # WEBHOOK: ${{ secrets.WEBHOOK }}
-      run: python henan_monitor.py
+      - name: 运行监控脚本
+        env:
+          EMAIL_USER: ${{ secrets.EMAIL_USER }}
+          EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SENDER_NAME: ${{ secrets.SENDER_NAME }}
+        run: python henan_monitor.py
