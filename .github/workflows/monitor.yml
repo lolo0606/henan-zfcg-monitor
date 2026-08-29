@@ -3,9 +3,9 @@ name: 河南政府采购网监控
 on:
   schedule:
     # ⏰ 北京时间 09:00 = UTC 01:00
-    - cron: "0 1 * * *"
+    - cron: "57 1 * * *"
     # ⏰ 北京时间 17:30 = UTC 09:30
-    - cron: "30 9 * * *"
+    - cron: "37 9 * * *"
   workflow_dispatch:  # 允许手动触发（Actions 页面点 Run workflow）
 
 env:
